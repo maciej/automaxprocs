@@ -59,6 +59,8 @@ const (
 	// _cgroupFSType is the Linux CGroup-V2 file system type used in
 	// `/proc/$PID/mountinfo`.
 	_cgroupv2FSType = "cgroup2"
+	// _cgroupv2CPUMaxQuota is used to indicate no CPU limit
+	_cgroupv2CPUMaxNoLimit = "max"
 )
 
 const (
@@ -147,7 +149,7 @@ func IsCGroupV2() (bool, error) {
 }
 
 func isCGroupV2(procPathMountInfo string) (bool, error) {
-	isV2 := false
+	var isV2 bool
 	newMountPoint := func(mp *MountPoint) error {
 		if mp.FSType == _cgroupv2FSType && mp.MountPoint == _cgroupv2MountPoint {
 			isV2 = true
@@ -157,10 +159,7 @@ func isCGroupV2(procPathMountInfo string) (bool, error) {
 	if err := parseMountInfo(procPathMountInfo, newMountPoint); err != nil {
 		return false, err
 	}
-	if isV2 {
-		return true, nil
-	}
-	return false, nil
+	return isV2, nil
 }
 
 // CPUQuotaV2 returns the CPU quota applied with the CPU cgroup2 controller.
@@ -185,7 +184,7 @@ func cpuQuotaV2(cgroupv2MountPoint, cgroupv2CPUMax string) (float64, bool, error
 		if len(fields) != 2 {
 			return -1, false, fmt.Errorf("invalid format")
 		}
-		if fields[0] == "max" {
+		if fields[0] == _cgroupv2CPUMaxNoLimit {
 			return -1, false, nil
 		}
 		max, err := strconv.Atoi(fields[_cgroupv2CPUMaxQuota])
