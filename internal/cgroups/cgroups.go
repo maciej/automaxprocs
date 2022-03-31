@@ -49,44 +49,65 @@ const (
 	_procPathMountInfo = "/proc/self/mountinfo"
 )
 
+type CGroupView interface {
+	CPUQuota() (float64, bool, error)
+}
+
+type CGroups2 struct {
+	mount string
+	child string
+}
+
 // CGroups is a map that associates each CGroup with its subsystem name.
 type CGroups map[string]*CGroup
 
 // NewCGroups returns a new *CGroups from given `mountinfo` and `cgroup` files
 // under for some process under `/proc` file system (see also proc(5) for more
 // information).
-func NewCGroups(procPathMountInfo, procPathCGroup string) (CGroups, error) {
+func NewCGroups(procPathMountInfo, procPathCGroup string) (CGroupView, error) {
 	cgroupSubsystems, err := parseCGroupSubsystems(procPathCGroup)
 	if err != nil {
 		return nil, err
 	}
 
-	cgroups := make(CGroups)
-	newMountPoint := func(mp *MountPoint) error {
-		if mp.FSType != _cgroupFSType {
+	var subsysv2 *CGroupSubsys
+	for _, subsys := range cgroupSubsystems {
+		if subsys.ID == 0 {
+			subsysv2 = subsys
+			break
+		}
+	}
+
+	if subsysv2 != nil {
+		panic("implement me")
+	} else {
+		cgroups := make(CGroups)
+		newMountPoint := func(mp *MountPoint) error {
+			if mp.FSType != _cgroupFSType {
+				return nil
+			}
+
+			for _, opt := range mp.SuperOptions {
+				subsys, exists := cgroupSubsystems[opt]
+				if !exists {
+					continue
+				}
+
+				cgroupPath, err := mp.Translate(subsys.Name)
+				if err != nil {
+					return err
+				}
+				cgroups[opt] = NewCGroup(cgroupPath)
+			}
+
 			return nil
 		}
 
-		for _, opt := range mp.SuperOptions {
-			subsys, exists := cgroupSubsystems[opt]
-			if !exists {
-				continue
-			}
-
-			cgroupPath, err := mp.Translate(subsys.Name)
-			if err != nil {
-				return err
-			}
-			cgroups[opt] = NewCGroup(cgroupPath)
+		if err := parseMountInfo(procPathMountInfo, newMountPoint); err != nil {
+			return nil, err
 		}
-
-		return nil
+		return cgroups, nil
 	}
-
-	if err := parseMountInfo(procPathMountInfo, newMountPoint); err != nil {
-		return nil, err
-	}
-	return cgroups, nil
 }
 
 // NewCGroupsForCurrentProcess returns a new *CGroups instance for the current
